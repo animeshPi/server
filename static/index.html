@@ -1,44 +1,72 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File List</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100">
-    <div class="container mx-auto p-4">
-        <h1 class="text-2xl font-bold mb-4">File List</h1>
-        <ul id="file-list" class="bg-white shadow-md rounded-lg p-4">
-            <!-- File items will be injected here by JavaScript -->
-        </ul>
-    </div>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>File Upload & Download</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-100 min-h-screen flex items-center justify-center p-6">
+        <div class="bg-white shadow-lg rounded-lg p-6 w-full max-w-3xl">
+            <h1 class="text-3xl font-semibold text-gray-800 mb-6">
+                File Upload & Download
+            </h1>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const fileList = document.getElementById('file-list');
+            <!-- Upload Form -->
+            <form
+                action="/"
+                method="POST"
+                enctype="multipart/form-data"
+                class="mb-6"
+            >
+                <label
+                    for="file"
+                    class="block mb-2 text-lg font-medium text-gray-700"
+                    >Select files to upload</label
+                >
+                <input
+                    type="file"
+                    id="file"
+                    name="file"
+                    class="block w-full text-gray-900 bg-gray-50 rounded-lg border border-gray-300 cursor-pointer focus:outline-none focus:ring focus:ring-indigo-200 focus:border-indigo-300 p-2.5"
+                    multiple
+                />
+                <button
+                    type="submit"
+                    class="mt-4 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-500 transition duration-200"
+                >
+                    Upload
+                </button>
+            </form>
 
-            if (window.filesData && Array.isArray(window.filesData)) {
-                window.filesData.forEach(file => {
-                    const listItem = document.createElement('li');
-                    listItem.className = "flex items-center justify-between p-2 border-b border-gray-200";
+            <!-- File List -->
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">
+                Available Files
+            </h2>
+            <ul id="file-list" class="space-y-4">
+                <script>
+                    const fileData = window.filesData || [];
+                    if (fileData.length === 0) {
+                        document.write(
+                            '<li class="text-gray-500">No files available for download.</li>',
+                        );
+                    } else {
+                        fileData.forEach((file) => {
+                            document.write(`
+                            <li class="flex justify-between items-center p-4 bg-gray-50 rounded-md shadow-sm">
+                                <span class="text-gray-700 font-medium">${file.name}</span>
+                                <a href="/?download=${file.name}" class="text-indigo-600 hover:underline">Download</a>
+                            </li>
+                        `);
+                        });
+                    }
+                </script>
+            </ul>
 
-                    const fileName = document.createElement('span');
-                    fileName.textContent = file.name;
-                    listItem.appendChild(fileName);
-
-                    const downloadButton = document.createElement('a');
-                    downloadButton.href = `/?download=${encodeURIComponent(file.name)}`;
-                    downloadButton.textContent = "Download";
-                    downloadButton.className = "bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600";
-                    listItem.appendChild(downloadButton);
-
-                    fileList.appendChild(listItem);
-                });
-            } else {
-                fileList.innerHTML = '<li class="p-2">No files found.</li>';
-            }
-        });
-    </script>
-</body>
+            <!-- Error Message -->
+            <div id="error-message" class="mt-6 text-red-500 hidden">
+                <p>Error: No files selected. Please try again.</p>
+            </div>
+        </div>
+    </body>
 </html>

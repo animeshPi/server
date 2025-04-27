@@ -1,11 +1,12 @@
 use actix_multipart::{Field, Multipart};
 use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder, get};
 use actix_web::cookie::Key;
+use actix_files::NamedFile;
 use futures::{StreamExt, TryStreamExt};
 use rand::Rng;
 use sanitize_filename::sanitize;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -14,9 +15,11 @@ use std::path::{Path, PathBuf};
 #[derive(Serialize)]
 struct FileInfo {
     name: String,
+    is_directory: bool,
+    path: String,
 }
 
-#[derive(Deserialize)]
+#[derive(serde::Deserialize, Serialize)]
 struct LoginForm {
     username: String,
     password: String,
@@ -147,6 +150,41 @@ async fn handle_upload(mut field: Field) -> Result<(), actix_web::Error> {
     Ok(())
 }
 
+#[get("/api/files")]
+async fn list_files() -> HttpResponse {
+    let folder_path = Path::new("/home/pi/Downloads");
+    let mut files_data = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(folder_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_directory = path.is_dir();
+            
+            files_data.push(FileInfo {
+                name: entry.file_name().to_string_lossy().to_string(),
+                is_directory,
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+
+    HttpResponse::Ok().json(files_data)
+}
+
+async fn serve_static_file(req: HttpRequest) -> actix_web::Result<NamedFile> {
+    let path = req.match_info().query("filename");
+    let file_path = format!("./static/{}", path);
+    
+    match NamedFile::open_async(file_path).await {
+        Ok(file) => Ok(file),
+        Err(_) => {
+            // Fallback to index.html for SPA routing
+            NamedFile::open_async("./static/index.html").await
+                .map_err(|_| actix_web::error::ErrorNotFound("File not found"))
+        }
+    }
+}
+
 async fn index(
     session: Session,
     req: HttpRequest,
@@ -180,27 +218,12 @@ async fn index(
         }
 
         // Read HTML template
-        let mut html = fs::read_to_string("./static/index.html").unwrap_or_else(|_| String::from(
-            r#"<html>
-                <body>
-                    <a href="/logout" style="float:right">Logout</a>
-                    <h1>File Upload</h1>
-                    <form id="uploadForm" action="/" method="post" enctype="multipart/form-data">
-                        <input type="file" name="file" multiple directory webkitdirectory>
-                        <button type="submit">Upload</button>
-                    </form>
-                    <div id="fileList"></div>
-                    <!-- FILES_DATA -->
-                </body>
+        let html = fs::read_to_string("./static/index.html").unwrap_or_else(|_| String::from(
+            r#"<!DOCTYPE html>
+            <html>
+                <!-- Your HTML content here -->
             </html>"#,
         ));
-
-        // Inject file list data
-        let files_data = list_files().await;
-        html = html.replace(
-            "<!-- FILES_DATA -->",
-            &format!("<script>const filesData = {};</script>", files_data)
-        );
 
         HttpResponse::Ok().content_type("text/html").body(html)
     } else {
@@ -208,24 +231,6 @@ async fn index(
             .append_header(("Location", "/login"))
             .finish()
     }
-}
-
-async fn list_files() -> String {
-    let folder_path = Path::new("/home/pi/Downloads");
-    let mut files_data = Vec::new();
-
-    if let Ok(entries) = fs::read_dir(folder_path) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                files_data.push(FileInfo {
-                    name: entry.file_name().to_string_lossy().to_string(),
-                });
-            }
-        }
-    }
-
-    serde_json::to_string(&files_data).unwrap_or_else(|_| "[]".to_string())
 }
 
 async fn download_file(file_name: String) -> HttpResponse {
@@ -263,6 +268,11 @@ async fn main() -> std::io::Result<()> {
                 .cookie_secure(false)
                 .build()
             )
+            .service(
+                web::resource("/static/{filename:.*}")
+                    .route(web::get().to(serve_static_file))
+            )
+            .service(list_files) // Add the files API endpoint
             .route("/", web::get().to(index))
             .route("/", web::post().to(index))
             .route("/login", web::get().to(login))
@@ -272,7 +282,7 @@ async fn main() -> std::io::Result<()> {
                 HttpResponse::NotFound().body("404 Not Found") 
             }))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }

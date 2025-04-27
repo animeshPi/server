@@ -9,50 +9,25 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Apply Inter font globally */
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        /* Style for the file input button to look consistent */
+        body { font-family: 'Inter', sans-serif; }
         input[type="file"]::file-selector-button {
-            margin-right: 1rem; /* file:mr-4 */
-            padding-top: 0.5rem; /* file:py-2 */
-            padding-bottom: 0.5rem; /* file:py-2 */
-            padding-left: 1rem; /* file:px-4 */
-            padding-right: 1rem; /* file:px-4 */
-            border-radius: 0.5rem; /* file:rounded-lg */
-            border-width: 0; /* file:border-0 */
-            font-size: 0.875rem; /* file:text-sm */
-            line-height: 1.25rem;
-            font-weight: 600; /* file:font-semibold */
-            --tw-bg-opacity: 1;
-            background-color: rgb(55 65 81 / var(--tw-bg-opacity)); /* file:bg-gray-700 */
-             --tw-text-opacity: 1;
-            color: rgb(209 213 219 / var(--tw-text-opacity)); /* file:text-gray-300 */
-            transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
-            transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-            transition-duration: 150ms;
+            margin-right: 1rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            border: 0;
+            font-size: 0.875rem;
+            font-weight: 600;
+            background-color: rgb(55 65 81);
+            color: rgb(209 213 219);
             cursor: pointer;
         }
         input[type="file"]::file-selector-button:hover {
-             --tw-bg-opacity: 1;
-             background-color: rgb(75 85 99 / var(--tw-bg-opacity)); /* hover:file:bg-gray-600 */
+            background-color: rgb(75 85 99);
         }
-        /* Custom scrollbar for file list */
-        #fileList::-webkit-scrollbar {
-            width: 8px;
-        }
-        #fileList::-webkit-scrollbar-track {
-            background: #374151; /* gray-700 */
-            border-radius: 10px;
-        }
-        #fileList::-webkit-scrollbar-thumb {
-            background: #4b5563; /* gray-600 */
-            border-radius: 10px;
-        }
-        #fileList::-webkit-scrollbar-thumb:hover {
-            background: #6b7280; /* gray-500 */
-        }
+        #fileList::-webkit-scrollbar { width: 8px; }
+        #fileList::-webkit-scrollbar-track { background: #374151; }
+        #fileList::-webkit-scrollbar-thumb { background: #4b5563; }
+        #fileList::-webkit-scrollbar-thumb:hover { background: #6b7280; }
     </style>
 </head>
 <body class="bg-gray-900 min-h-screen text-gray-100 flex items-center justify-center">
@@ -88,8 +63,13 @@
         <div id="messageArea" class="mb-6"></div>
 
         <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-            <div class="p-4 bg-gray-700 border-b border-gray-600">
-                <span id="currentDirectory" class="text-sm font-medium text-gray-300">Loading files...</span>
+            <div class="p-4 bg-gray-700 border-b border-gray-600 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <button id="backButton" class="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-xs font-medium transition duration-150 ease-in-out shadow-sm hidden">
+                        ← Back
+                    </button>
+                    <span id="currentDirectory" class="text-sm font-medium text-gray-300">/</span>
+                </div>
             </div>
 
             <div id="fileList" class="divide-y divide-gray-700 max-h-96 overflow-y-auto">
@@ -104,11 +84,10 @@
         const fileInput = document.getElementById('fileInput');
         const messageArea = document.getElementById('messageArea');
         const currentDirectoryElement = document.getElementById('currentDirectory');
-        const uploadProgressContainer = document.getElementById('uploadProgressContainer');
-        const uploadProgressBar = document.getElementById('uploadProgressBar');
-        const uploadStatus = document.getElementById('uploadStatus');
+        const backButton = document.getElementById('backButton');
+        let currentPath = '';
 
-        // --- Utility Functions ---
+        // Utility functions
         function showMessage(text, type = 'info') {
             const alertClasses = {
                 success: 'bg-green-900 border-green-700 text-green-300',
@@ -116,189 +95,121 @@
                 info: 'bg-blue-900 border-blue-700 text-blue-300',
             };
             const messageDiv = document.createElement('div');
-            messageDiv.className = `p-4 mb-4 text-sm rounded-lg border ${alertClasses[type] || alertClasses.info}`;
-            messageDiv.role = 'alert';
+            messageDiv.className = `p-4 mb-4 text-sm rounded-lg border ${alertClasses[type]}`;
             messageDiv.textContent = text;
-            messageArea.innerHTML = ''; // Clear previous messages
+            messageArea.innerHTML = '';
             messageArea.appendChild(messageDiv);
-
-            // Auto-dismiss after 5 seconds for success/info
-            if (type === 'success' || type === 'info') {
-                setTimeout(() => {
-                    if (messageDiv.parentNode === messageArea) {
-                         messageArea.removeChild(messageDiv);
-                    }
-                }, 5000);
-            }
+            if (type !== 'error') setTimeout(() => messageDiv.remove(), 5000);
         }
 
-        function formatBytes(bytes, decimals = 2) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-        }
-
-        // --- API Interaction ---
-        async function loadFiles(currentPath = '/home/pi/Downloads') { // Default path for display
-            fileList.innerHTML = '<div class="p-4 text-center text-gray-500">Loading...</div>'; // Show loading state
-            currentDirectoryElement.textContent = `Current Directory: ${currentPath}`; // Update displayed path
-
+        // File loading and navigation
+        async function loadFiles() {
             try {
-                const response = await fetch('/api/files'); // Backend currently only lists one dir
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                fileList.innerHTML = '<div class="p-4 text-center text-gray-500">Loading...</div>';
+                const apiUrl = `/api/files${currentPath ? `?path=${encodeURIComponent(currentPath)}` : ''}`;
+                const response = await fetch(apiUrl);
+                
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const files = await response.json();
 
-                fileList.innerHTML = ''; // Clear loading state
+                fileList.innerHTML = '';
+                backButton.classList.toggle('hidden', !currentPath);
+                currentDirectoryElement.textContent = currentPath ? `/${currentPath}` : '/';
 
-                if (files.length === 0) {
-                     fileList.innerHTML = '<div class="p-4 text-center text-gray-500">Directory is empty.</div>';
-                     return;
-                }
-
-                // Sort files: directories first, then by name
                 files.sort((a, b) => {
-                    if (a.is_directory !== b.is_directory) {
-                        return a.is_directory ? -1 : 1; // Directories come first
-                    }
-                    return a.name.localeCompare(b.name); // Sort alphabetically
+                    if (a.is_directory !== b.is_directory) return a.is_directory ? -1 : 1;
+                    return a.name.localeCompare(b.name);
                 });
-
 
                 files.forEach(file => {
                     const item = document.createElement('div');
-                    item.className = 'flex items-center justify-between px-4 py-3 hover:bg-gray-700 transition duration-150 ease-in-out';
+                    item.className = 'flex items-center justify-between px-4 py-3 hover:bg-gray-700 transition duration-150 ease-in-out cursor-pointer';
 
-                    const fileInfoDiv = document.createElement('div');
-                    fileInfoDiv.className = 'flex items-center flex-1 min-w-0 mr-4'; // Added min-w-0 for truncation
+                    const fileInfo = document.createElement('div');
+                    fileInfo.className = 'flex items-center flex-1 min-w-0';
+                    fileInfo.innerHTML = `
+                        ${file.is_directory ? 
+                            '<svg class="w-5 h-5 mr-3 text-yellow-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>' : 
+                            '<svg class="w-5 h-5 mr-3 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>'}
+                        <span class="text-gray-300 truncate">${file.name}</span>
+                    `;
 
-                    // Determine icon based on type
-                    const iconSvg = file.is_directory
-                        ? `<svg class="w-5 h-5 mr-3 text-yellow-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>`
-                        : `<svg class="w-5 h-5 mr-3 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>`;
-
-                    const nameSpan = document.createElement('span');
-                    nameSpan.className = 'text-gray-300 truncate'; // Added truncate
-                    nameSpan.textContent = file.name;
-
-                    fileInfoDiv.innerHTML = iconSvg; // Add icon first
-                    fileInfoDiv.appendChild(nameSpan); // Append name span
-
-                    item.appendChild(fileInfoDiv);
-
-                    // Add download button for files
-                    if (!file.is_directory) {
-                        const downloadButton = document.createElement('a');
-                        downloadButton.href = `/?download=${encodeURIComponent(file.name)}`;
-                        downloadButton.className = 'ml-auto px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium transition duration-150 ease-in-out shadow-sm flex-shrink-0';
-                        downloadButton.innerHTML = `
-                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    const actions = document.createElement('div');
+                    if (file.is_directory) {
+                        const openBtn = document.createElement('button');
+                        openBtn.className = 'px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-xs font-medium transition duration-150 ease-in-out';
+                        openBtn.textContent = 'Open';
+                        openBtn.onclick = () => {
+                            currentPath = file.path;
+                            loadFiles();
+                        };
+                        actions.appendChild(openBtn);
+                    } else {
+                        const downloadBtn = document.createElement('a');
+                        downloadBtn.className = 'px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium transition duration-150 ease-in-out';
+                        downloadBtn.href = `/?download=${encodeURIComponent(file.path)}`;
+                        downloadBtn.innerHTML = `
+                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                             Download`;
-                        downloadButton.setAttribute('download', file.name); // Suggest filename
-                        item.appendChild(downloadButton);
-                    }
-                     // Placeholder for directory actions (e.g., open) - can be added later
-                     else {
-                        // Could add a button/link to navigate into the directory here
-                        // For now, just leave space or add a disabled element
-                         const dirPlaceholder = document.createElement('div');
-                         dirPlaceholder.className = 'w-20 flex-shrink-0'; // Reserve space similar to download button
-                         item.appendChild(dirPlaceholder);
+                        actions.appendChild(downloadBtn);
                     }
 
+                    // Double-click handler
+                    item.addEventListener('dblclick', (e) => {
+                        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+                        
+                        if (file.is_directory) {
+                            currentPath = file.path;
+                            loadFiles();
+                        } else {
+                            window.location.href = `/?download=${encodeURIComponent(file.path)}`;
+                        }
+                    });
 
+                    item.appendChild(fileInfo);
+                    item.appendChild(actions);
                     fileList.appendChild(item);
                 });
 
             } catch (error) {
-                console.error('Error loading files:', error);
-                fileList.innerHTML =
-                    '<div class="p-4 text-red-400">Error loading files. Check console or backend logs.</div>';
-                currentDirectoryElement.textContent = 'Error loading';
-                showMessage(`Failed to load files: ${error.message}`, 'error');
+                showMessage(`Error loading files: ${error.message}`, 'error');
+                fileList.innerHTML = '<div class="p-4 text-center text-red-400">Failed to load files</div>';
             }
         }
 
-        // --- Event Listeners ---
-
-        // Initial load
-        document.addEventListener('DOMContentLoaded', () => loadFiles());
-
-        // Handle form submission with XMLHttpRequest for progress
-        uploadForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            messageArea.innerHTML = ''; // Clear previous messages
-
-            const files = fileInput.files;
-            if (files.length === 0) {
-                showMessage('No files selected for upload.', 'info');
-                return;
-            }
-
-            const formData = new FormData();
-            let totalSize = 0;
-            for (let i = 0; i < files.length; i++) {
-                formData.append('file', files[i]); // Use 'file' as the field name expected by backend
-                totalSize += files[i].size;
-            }
-
-            // Show progress bar
-            uploadProgressContainer.classList.remove('hidden');
-            uploadProgressBar.style.width = '0%';
-            uploadStatus.textContent = `Uploading ${files.length} file(s) (${formatBytes(totalSize)})... 0%`;
-
-            const xhr = new XMLHttpRequest();
-
-            xhr.upload.addEventListener('progress', (event) => {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    uploadProgressBar.style.width = percentComplete + '%';
-                    uploadStatus.textContent = `Uploading ${files.length} file(s) (${formatBytes(totalSize)})... ${percentComplete}%`;
-                }
-            });
-
-            xhr.addEventListener('load', () => {
-                uploadProgressBar.style.width = '100%'; // Ensure it reaches 100% on completion
-                 uploadStatus.textContent = 'Processing upload...';
-
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    showMessage(`${files.length} file(s) uploaded successfully! Refreshing list...`, 'success');
-                    loadFiles(); // Refresh file list
-                    uploadForm.reset(); // Clear form
-                    setTimeout(() => { // Hide progress after a short delay
-                       uploadProgressContainer.classList.add('hidden');
-                    }, 1500);
-                } else {
-                    console.error('Upload failed:', xhr.status, xhr.responseText);
-                    showMessage(`Error uploading files: ${xhr.status} - ${xhr.responseText || 'Server error'}`, 'error');
-                     // Keep progress bar visible but indicate error (optional: change color)
-                     uploadProgressBar.classList.remove('bg-blue-500');
-                     uploadProgressBar.classList.add('bg-red-500');
-                     uploadStatus.textContent = `Upload failed. Status: ${xhr.status}`;
-                }
-            });
-
-            xhr.addEventListener('error', () => {
-                console.error('Upload error:', xhr.status, xhr.responseText);
-                showMessage('Upload failed due to a network error or server issue.', 'error');
-                uploadProgressContainer.classList.add('hidden'); // Hide progress on error
-            });
-
-             xhr.addEventListener('abort', () => {
-                console.log('Upload aborted');
-                showMessage('Upload aborted by user.', 'info');
-                uploadProgressContainer.classList.add('hidden'); // Hide progress on abort
-            });
-
-
-            xhr.open('POST', '/', true); // POST to the root path
-            xhr.send(formData);
+        // Back button functionality
+        backButton.addEventListener('click', () => {
+            const segments = currentPath.split('/').filter(s => s);
+            segments.pop();
+            currentPath = segments.join('/');
+            loadFiles();
         });
 
+        // Initial load
+        document.addEventListener('DOMContentLoaded', loadFiles);
+
+        // File upload handling
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(uploadForm);
+            
+            try {
+                const response = await fetch('/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    showMessage('Files uploaded successfully!', 'success');
+                    loadFiles();
+                    fileInput.value = '';
+                } else {
+                    throw new Error(`Upload failed: ${response.status}`);
+                }
+            } catch (error) {
+                showMessage(error.message, 'error');
+            }
+        });
     </script>
 </body>
 </html>

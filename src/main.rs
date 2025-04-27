@@ -151,19 +151,40 @@ async fn handle_upload(mut field: Field) -> Result<(), actix_web::Error> {
 }
 
 #[get("/api/files")]
-async fn list_files() -> HttpResponse {
-    let folder_path = Path::new("/home/pi/Downloads");
-    let mut files_data = Vec::new();
+async fn list_files(query: web::Query<HashMap<String, String>>) -> HttpResponse {
+    let base_path = Path::new("/home/pi/Downloads");
+    let provided_path = query.get("path").map(|s| s.as_str()).unwrap_or("");
 
-    if let Ok(entries) = fs::read_dir(folder_path) {
+    // Construct full path and validate it
+    let mut current_path = base_path.join(provided_path);
+    if let Ok(canonical_path) = current_path.canonicalize() {
+        if !canonical_path.starts_with(base_path) {
+            return HttpResponse::BadRequest().body("Invalid path");
+        }
+        current_path = canonical_path;
+    } else {
+        return HttpResponse::NotFound().body("Path not found");
+    }
+
+    // Ensure we're working with a directory
+    if !current_path.is_dir() {
+        return HttpResponse::BadRequest().body("Not a directory");
+    }
+
+    let mut files_data = Vec::new();
+    if let Ok(entries) = fs::read_dir(&current_path) {
         for entry in entries.flatten() {
-            let path = entry.path();
-            let is_directory = path.is_dir();
-            
+            let entry_path = entry.path();
+            let relative_path = entry_path.strip_prefix(base_path)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
+
             files_data.push(FileInfo {
                 name: entry.file_name().to_string_lossy().to_string(),
-                is_directory,
-                path: path.to_string_lossy().to_string(),
+                is_directory: entry_path.is_dir(),
+                path: relative_path,
             });
         }
     }
